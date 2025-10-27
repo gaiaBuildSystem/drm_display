@@ -24,8 +24,8 @@ $(TARGET): $(OBJS) $(STB_IMAGE)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(STB_IMAGE):
-	@echo "Descargando stb_image.h..."
-	wget -q https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -O $(STB_IMAGE)
+	@echo "stb_image.h should be already into the source..."
+	# wget -q https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -O $(STB_IMAGE)
 
 # Instalar dependencias en sistemas Debian/Ubuntu
 deps-debian:

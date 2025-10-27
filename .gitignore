@@ -17,7 +17,7 @@ images/*.png
 images/*_16_9.png
 
 # stb_image descargado automáticamente
-stb_image.h
+# stb_image.h
 
 # Otros
 .DS_Store
