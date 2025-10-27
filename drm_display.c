@@ -82,18 +82,7 @@ static int find_drm_device(struct drm_device *dev, const char* dri_index) {
 
     dev->connector = connector;
 
-
-    // Select the best mode (largest area)
-    area = 0;
-    for (i = 0; i < connector->count_modes; i++) {
-        drmModeModeInfo *current_mode = &connector->modes[i];
-        if (current_mode->hdisplay * current_mode->vdisplay > area) {
-            dev->mode = *current_mode;
-            area = current_mode->hdisplay * current_mode->vdisplay;
-        }
-    }
-
-    // Find encoder
+    // Find encoder first to get CRTC information
     if (connector->encoder_id) {
         encoder = drmModeGetEncoder(dev->fd, connector->encoder_id);
     }
@@ -119,14 +108,29 @@ static int find_drm_device(struct drm_device *dev, const char* dri_index) {
 
     dev->encoder = encoder;
 
-
     // Get CRTC
     if (encoder->crtc_id) {
         dev->crtc = drmModeGetCrtc(dev->fd, encoder->crtc_id);
     }
 
-    printf("Selected mode: %dx%d@%dHz\n",
-           dev->mode.hdisplay, dev->mode.vdisplay, dev->mode.vrefresh);
+    // Try to use current mode if available, otherwise select the best mode (largest area)
+    if (dev->crtc && dev->crtc->mode_valid) {
+        dev->mode = dev->crtc->mode;
+        printf("Using current mode: %dx%d@%dHz\n",
+               dev->mode.hdisplay, dev->mode.vdisplay, dev->mode.vrefresh);
+    } else {
+        // Fallback: Select the best mode (largest area)
+        area = 0;
+        for (i = 0; i < connector->count_modes; i++) {
+            drmModeModeInfo *current_mode = &connector->modes[i];
+            if (current_mode->hdisplay * current_mode->vdisplay > area) {
+                dev->mode = *current_mode;
+                area = current_mode->hdisplay * current_mode->vdisplay;
+            }
+        }
+        printf("Selected mode: %dx%d@%dHz\n",
+               dev->mode.hdisplay, dev->mode.vdisplay, dev->mode.vrefresh);
+    }
 
     return 0;
 }
