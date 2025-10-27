@@ -35,17 +35,20 @@ struct drm_device {
     uint32_t pitch;
 };
 
-static int find_drm_device(struct drm_device *dev) {
+static int find_drm_device(struct drm_device *dev, const char* dri_index) {
     drmModeRes *resources;
     drmModeConnector *connector = NULL;
     drmModeEncoder *encoder = NULL;
     int i, area;
 
+    // concat DRI index to device path
+    char device_path[64];
+    snprintf(device_path, sizeof(device_path), "/dev/dri/card%s", dri_index);
 
     // Try to open the DRM device
-    dev->fd = open("/dev/dri/card1", O_RDWR | O_CLOEXEC);
+    dev->fd = open(device_path, O_RDWR | O_CLOEXEC);
     if (dev->fd < 0) {
-        fprintf(stderr, "Error: Cannot open /dev/dri/card1: %s\n", strerror(errno));
+        fprintf(stderr, "Error: Cannot open %s: %s\n", device_path, strerror(errno));
         return -1;
     }
 
@@ -186,6 +189,8 @@ static void scale_and_center_image(unsigned char *image_data, int img_width, int
     float scale_x = (float)fb_width / img_width;
     float scale_y = (float)fb_height / img_height;
     float scale = (scale_x < scale_y) ? scale_x : scale_y;
+    // TODO: make the scale adjustable
+    scale = 1.0f; // No scaling for now
 
     int scaled_width = (int)(img_width * scale);
     int scaled_height = (int)(img_height * scale);
@@ -290,15 +295,15 @@ static void cleanup_drm(struct drm_device *dev) {
 int main(int argc, char *argv[]) {
     struct drm_device dev = {0};
 
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <image_path>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <image_path> <dri index>\n", argv[0]);
         return 1;
     }
 
     printf("Starting DRM image viewer...\n");
 
     // Initialize DRM device
-    if (find_drm_device(&dev) != 0) {
+    if (find_drm_device(&dev, argv[2]) != 0) {
         return 1;
     }
 
