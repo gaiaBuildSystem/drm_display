@@ -53,7 +53,7 @@ cross-arm:
 
 # Para sistemas embebidos con musl
 embedded:
-	$(MAKE) CC=musl-gcc CFLAGS="$(CFLAGS) -static" LDFLAGS="-ldrm -lm -static"
+	$(MAKE) CC=gcc CFLAGS="$(CFLAGS) -static" LDFLAGS="-ldrm -lm -static"
 
 help:
 	@echo "Objetivos disponibles:"
