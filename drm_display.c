@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <stdint.h>
+#include <signal.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
@@ -20,6 +21,15 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+// Global variable to control the main loop
+static volatile sig_atomic_t running = 1;
+
+// Signal handler for graceful shutdown
+static void signal_handler(int sig) {
+    (void)sig; // Suppress unused parameter warning
+    running = 0;
+}
 
 struct drm_device {
     int fd;
@@ -317,15 +327,25 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Set up signal handlers for graceful shutdown
+    signal(SIGINT, signal_handler);   // Ctrl+C
+    signal(SIGTERM, signal_handler);  // kill command
+    signal(SIGHUP, signal_handler);   // Terminal hangup
+
     // Display image
     if (display_image(&dev, argv[1]) != 0) {
         cleanup_drm(&dev);
         return 1;
     }
 
-    printf("Image displayed. Press Enter to exit...\n");
-    getchar();
+    printf("Image displayed. Send SIGTERM (kill) or SIGINT (Ctrl+C) to exit...\n");
 
+    // Wait for signal - this uses zero CPU until a signal arrives
+    while (running) {
+        pause(); // Suspend execution until any signal is received
+    }
+
+    printf("Received termination signal, cleaning up...\n");
     cleanup_drm(&dev);
     printf("Cleanup completed.\n");
 
