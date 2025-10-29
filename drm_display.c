@@ -197,14 +197,24 @@ static int create_framebuffer(struct drm_device *dev) {
     return 0;
 }
 
-static void scale_and_center_image(unsigned char *image_data, int img_width, int img_height,
-                                  uint32_t *fb_data, int fb_width, int fb_height) {
+static void scale_and_center_image(
+    unsigned char *image_data,
+    int img_width,
+    int img_height,
+    uint32_t *fb_data,
+    int fb_width,
+    int fb_height,
+    int do_scale
+) {
     // Calculate scale while maintaining aspect ratio
     float scale_x = (float)fb_width / img_width;
     float scale_y = (float)fb_height / img_height;
     float scale = (scale_x < scale_y) ? scale_x : scale_y;
-    // TODO: make the scale adjustable
-    scale = 1.0f; // No scaling for now
+
+    // do not scale ?
+    if (do_scale == 0) {
+        scale = 1.0f;
+    }
 
     int scaled_width = (int)(img_width * scale);
     int scaled_height = (int)(img_height * scale);
@@ -243,7 +253,11 @@ static void scale_and_center_image(unsigned char *image_data, int img_width, int
     }
 }
 
-static int display_image(struct drm_device *dev, const char *image_path) {
+static int display_image(
+    struct drm_device *dev,
+    const char *image_path,
+    int do_scale
+) {
     int img_width, img_height, channels;
     unsigned char *image_data;
 
@@ -261,8 +275,15 @@ static int display_image(struct drm_device *dev, const char *image_path) {
 
     // Scale and copy image to framebuffer
     uint32_t *fb_data = (uint32_t *)dev->map;
-    scale_and_center_image(image_data, img_width, img_height,
-                          fb_data, dev->mode.hdisplay, dev->mode.vdisplay);
+    scale_and_center_image(
+        image_data,
+        img_width,
+        img_height,
+        fb_data,
+        dev->mode.hdisplay,
+        dev->mode.vdisplay,
+        do_scale
+    );
 
     stbi_image_free(image_data);
 
@@ -309,8 +330,8 @@ static void cleanup_drm(struct drm_device *dev) {
 int main(int argc, char *argv[]) {
     struct drm_device dev = {0};
 
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <image_path> <dri index>\n", argv[0]);
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <image_path> <dri index> <scale>\n", argv[0]);
         return 1;
     }
 
@@ -333,7 +354,7 @@ int main(int argc, char *argv[]) {
     signal(SIGHUP, signal_handler);   // Terminal hangup
 
     // Display image
-    if (display_image(&dev, argv[1]) != 0) {
+    if (display_image(&dev, argv[1], atoi(argv[3])) != 0) {
         cleanup_drm(&dev);
         return 1;
     }
