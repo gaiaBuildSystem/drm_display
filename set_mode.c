@@ -73,24 +73,34 @@ static int find_drm_device(struct drm_device *dev, const char* dri_index) {
 
     dev->connector = connector;
 
-    // Find encoder
+    // Find encoder - try current encoder first, then any compatible encoder
     if (connector->encoder_id) {
         encoder = drmModeGetEncoder(dev->fd, connector->encoder_id);
     }
 
+    // If no current encoder, search for a compatible one
     if (!encoder) {
-        for (i = 0; i < resources->count_encoders; i++) {
-            encoder = drmModeGetEncoder(dev->fd, resources->encoders[i]);
-            if (encoder->encoder_id == connector->encoder_id) {
-                break;
+        for (i = 0; i < connector->count_encoders; i++) {
+            encoder = drmModeGetEncoder(dev->fd, connector->encoders[i]);
+            if (encoder) {
+                // Check if this encoder has an available CRTC
+                for (int j = 0; j < resources->count_crtcs; j++) {
+                    if (encoder->possible_crtcs & (1 << j)) {
+                        // Found a compatible encoder with possible CRTC
+                        break;
+                    }
+                }
+                if (encoder->possible_crtcs) {
+                    break; // Use this encoder
+                }
+                drmModeFreeEncoder(encoder);
+                encoder = NULL;
             }
-            drmModeFreeEncoder(encoder);
-            encoder = NULL;
         }
     }
 
     if (!encoder) {
-        fprintf(stderr, "Error: No encoder found\n");
+        fprintf(stderr, "Error: No encoder found for connector\n");
         drmModeFreeConnector(connector);
         drmModeFreeResources(resources);
         close(dev->fd);
@@ -99,9 +109,31 @@ static int find_drm_device(struct drm_device *dev, const char* dri_index) {
 
     dev->encoder = encoder;
 
-    // Get CRTC
+    // Find a CRTC - try current one first, then find an available one
+    uint32_t crtc_id = 0;
     if (encoder->crtc_id) {
-        dev->crtc = drmModeGetCrtc(dev->fd, encoder->crtc_id);
+        crtc_id = encoder->crtc_id;
+        dev->crtc = drmModeGetCrtc(dev->fd, crtc_id);
+    } else {
+        // Find first available CRTC that this encoder can use
+        for (i = 0; i < resources->count_crtcs; i++) {
+            if (encoder->possible_crtcs & (1 << i)) {
+                crtc_id = resources->crtcs[i];
+                dev->crtc = drmModeGetCrtc(dev->fd, crtc_id);
+                if (dev->crtc) {
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!dev->crtc) {
+        fprintf(stderr, "Error: No CRTC found\n");
+        drmModeFreeEncoder(encoder);
+        drmModeFreeConnector(connector);
+        drmModeFreeResources(resources);
+        close(dev->fd);
+        return -1;
     }
 
     // Find the largest mode
@@ -150,7 +182,7 @@ static int set_mode(struct drm_device *dev) {
 
     printf("Setting mode to: %dx%d@%dHz\n",
            dev->mode.hdisplay, dev->mode.vdisplay, dev->mode.vrefresh);
-    ret = drmModeSetCrtc(dev->fd, dev->encoder->crtc_id, dev->fb_id,
+    ret = drmModeSetCrtc(dev->fd, dev->crtc->crtc_id, dev->fb_id,
                          0, 0, &dev->connector->connector_id, 1, &dev->mode);
     if (ret) {
         fprintf(stderr, "Error: Cannot set CRTC: %s\n", strerror(errno));
