@@ -6,6 +6,7 @@
 
 # Binarios
 /drm_display
+/set_mode
 
 # Archivos temporales y de respaldo
 *~
