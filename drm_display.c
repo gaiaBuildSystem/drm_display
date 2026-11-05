@@ -292,6 +292,44 @@ static void scale_and_center_image(
     }
 }
 
+// Build a numbered variant of image_path by inserting 'index' right before the
+// file extension. e.g. "/path/file.png" with index 3 -> "/path/file3.png".
+// If index <= 0, returns an unchanged copy of the original path (the base frame).
+static char *build_numbered_path(const char *image_path, int index) {
+    if (index <= 0) {
+        size_t len = strlen(image_path);
+        char *copy = malloc(len + 1);
+        if (!copy) return NULL;
+        memcpy(copy, image_path, len + 1);
+        return copy;
+    }
+
+    char num[32];
+    snprintf(num, sizeof(num), "%d", index);
+
+    // Locate the last '.' in the basename (the extension separator).
+    const char *base = strrchr(image_path, '/');
+    base = base ? base + 1 : image_path;
+    const char *dot = NULL;
+    for (const char *p = base; *p; p++) {
+        if (*p == '.') dot = p; // keep updating -> ends on the last dot in basename
+    }
+
+    size_t stem_len = dot ? (size_t)(dot - image_path) : strlen(image_path);
+    size_t num_len  = strlen(num);
+    char *result = malloc(stem_len + num_len + (dot ? strlen(dot) : 0) + 1);
+    if (!result) return NULL;
+
+    memcpy(result, image_path, stem_len);          // path up to the extension
+    memcpy(result + stem_len, num, num_len);        // insert the frame number
+    if (dot) {
+        strcpy(result + stem_len + num_len, dot);   // copy ".ext" including the dot
+    } else {
+        result[stem_len + num_len] = '\0';          // no extension: just append number
+    }
+    return result;
+}
+
 static int render_image(
     struct drm_device *dev,
     const char *image_path,
@@ -415,7 +453,12 @@ int main(int argc, char *argv[]) {
     // printf("or send SIGHUP (kill -HUP <pid>) to force a reload.\n");
     // printf("Send SIGTERM (kill) or SIGINT (Ctrl+C) to exit...\n");
 
-    // Watch for image changes: poll the file's mtime once per second.
+    // Frame sequence state: initial load is the base image (frame 0). Each reload
+    // signal advances to the next numbered frame (file1.ext, file2.ext, ...).
+    int frame_index = 0;
+    int sequence_done = 0;
+
+    // Watch for a change on the base image so it can also act as a reload trigger.
     struct stat st;
     time_t last_mtime = 0;
     if (stat(argv[1], &st) == 0) {
@@ -423,19 +466,28 @@ int main(int argc, char *argv[]) {
     }
 
     while (running) {
-        // Detect a file change on disk (covers overwrite, replace and mv)
+        // Detect a file change on disk (covers overwrite, replace and mv).
         struct stat cur_st;
-        if (!reload_requested && stat(argv[1], &cur_st) == 0 &&
+        if (!reload_requested && !sequence_done && stat(argv[1], &cur_st) == 0 &&
             cur_st.st_mtime != last_mtime) {
             reload_requested = 1;
             last_mtime = cur_st.st_mtime; // one attempt per change, even if load fails
         }
 
-        if (reload_requested) {
+        if (reload_requested && !sequence_done) {
             reload_requested = 0;
-            printf("Reloading image...\n");
+            // let's maintain a fixed frame index for all the reloads
+            // but let's maintain the logic here
+            // frame_index++;
+            frame_index = 1;
+            char *path = build_numbered_path(argv[1], frame_index);
+            printf("Reloading image: %s\n", path ? path : "(alloc failed)");
             // Redraw into the already-attached framebuffer: no CRTC re-set, no flicker.
-            render_image(&dev, argv[1], atoi(argv[3]));
+            if (path && render_image(&dev, path, atoi(argv[3])) != 0) {
+                printf("No more images in sequence at '%s' — holding last good frame.\n", path);
+                sequence_done = 1; // stop advancing once the numbered files run out
+            }
+            free(path);
         }
 
         struct timespec sleep_1s = { .tv_sec = 1, .tv_nsec = 0 };
