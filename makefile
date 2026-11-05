@@ -54,7 +54,7 @@ deps-alpine:
 set_mode: $(SET_MODE_TARGET)
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(SET_MODE_OBJ) $(SET_MODE_TARGET) $(STB_IMAGE)
+	rm -f $(OBJS) $(TARGET) $(SET_MODE_OBJ) $(SET_MODE_TARGET)
 
 install: $(TARGET)
 	sudo cp $(TARGET) /usr/local/bin/

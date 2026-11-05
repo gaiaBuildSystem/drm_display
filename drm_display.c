@@ -9,6 +9,8 @@
 #include <sys/mman.h>
 #include <stdint.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
@@ -24,11 +26,16 @@
 
 // Global variable to control the main loop
 static volatile sig_atomic_t running = 1;
+static volatile sig_atomic_t reload_requested = 0;
 
-// Signal handler for graceful shutdown
+// Signal handler for graceful shutdown / manual reload
 static void signal_handler(int sig) {
-    (void)sig; // Suppress unused parameter warning
-    running = 0;
+    if (sig == SIGHUP) {
+        // Manual reload trigger: kill -HUP <pid>
+        reload_requested = 1;
+    } else {
+        running = 0;
+    }
 }
 
 struct drm_device {
@@ -285,7 +292,7 @@ static void scale_and_center_image(
     }
 }
 
-static int display_image(
+static int render_image(
     struct drm_device *dev,
     const char *image_path,
     int do_scale
@@ -318,6 +325,18 @@ static int display_image(
     );
 
     stbi_image_free(image_data);
+
+    return 0;
+}
+
+static int display_image(
+    struct drm_device *dev,
+    const char *image_path,
+    int do_scale
+) {
+    if (render_image(dev, image_path, do_scale) != 0) {
+        return -1;
+    }
 
     // Set mode and display framebuffer
     int ret = drmModeSetCrtc(dev->fd, dev->crtc->crtc_id, dev->fb_id,
@@ -391,11 +410,36 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Image displayed. Send SIGTERM (kill) or SIGINT (Ctrl+C) to exit...\n");
+    printf("Image displayed.\n");
+    // printf("Replace the image file on disk to update automatically,\n");
+    // printf("or send SIGHUP (kill -HUP <pid>) to force a reload.\n");
+    // printf("Send SIGTERM (kill) or SIGINT (Ctrl+C) to exit...\n");
 
-    // Wait for signal - this uses zero CPU until a signal arrives
+    // Watch for image changes: poll the file's mtime once per second.
+    struct stat st;
+    time_t last_mtime = 0;
+    if (stat(argv[1], &st) == 0) {
+        last_mtime = st.st_mtime;
+    }
+
     while (running) {
-        pause(); // Suspend execution until any signal is received
+        // Detect a file change on disk (covers overwrite, replace and mv)
+        struct stat cur_st;
+        if (!reload_requested && stat(argv[1], &cur_st) == 0 &&
+            cur_st.st_mtime != last_mtime) {
+            reload_requested = 1;
+            last_mtime = cur_st.st_mtime; // one attempt per change, even if load fails
+        }
+
+        if (reload_requested) {
+            reload_requested = 0;
+            printf("Reloading image...\n");
+            // Redraw into the already-attached framebuffer: no CRTC re-set, no flicker.
+            render_image(&dev, argv[1], atoi(argv[3]));
+        }
+
+        struct timespec sleep_1s = { .tv_sec = 1, .tv_nsec = 0 };
+        nanosleep(&sleep_1s, NULL);
     }
 
     printf("Received termination signal, cleaning up...\n");
