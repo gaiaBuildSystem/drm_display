@@ -486,6 +486,15 @@ int main(int argc, char *argv[]) {
             if (path && render_image(&dev, path, atoi(argv[3])) != 0) {
                 printf("No more images in sequence at '%s' — holding last good frame.\n", path);
                 sequence_done = 1; // stop advancing once the numbered files run out
+            } else if (path) {
+                // Tell the driver the FB content changed. Required on drivers with
+                // shadow/host-side buffers (virtio-gpu, udl, ...), otherwise the
+                // CPU writes to the dumb buffer never reach the screen.
+                if (drmModeDirtyFB(dev.fd, dev.fb_id, NULL, 0) != 0 && errno != ENOSYS) {
+                    // Fallback: re-attach the FB, which forces a plane update/flush.
+                    drmModeSetCrtc(dev.fd, dev.crtc->crtc_id, dev.fb_id, 0, 0,
+                                   &dev.connector->connector_id, 1, &dev.mode);
+                }
             }
             free(path);
         }
