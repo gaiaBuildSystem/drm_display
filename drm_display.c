@@ -336,12 +336,16 @@ static int render_image(
     int do_scale
 ) {
     int img_width, img_height, channels;
-    unsigned char *image_data;
+    const char *stbi_reason = NULL;
 
     // Load image
-    image_data = stbi_load(image_path, &img_width, &img_height, &channels, 3);
+    unsigned char *image_data = stbi_load(image_path, &img_width, &img_height, &channels, 3);
     if (!image_data) {
-        fprintf(stderr, "Error: Cannot load image %s\n", image_path);
+        // Query the specific failure reason stbi provides (e.g. "Corrupt JPEG",
+        // "Not a PNG", "Out of memory", "Unable to open file")
+        stbi_reason = stbi_failure_reason();
+        fprintf(stderr, "Error: Failed to load image %s — %s\n", image_path,
+                stbi_reason ? stbi_reason : "(unknown)");
         return -1;
     }
 
